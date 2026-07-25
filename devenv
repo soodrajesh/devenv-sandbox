@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEVENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "${SCRIPT_SOURCE}" ]]; do
+    SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "${SCRIPT_SOURCE}")"
+    [[ "${SCRIPT_SOURCE}" != /* ]] && SCRIPT_SOURCE="${SCRIPT_DIR}/${SCRIPT_SOURCE}"
+done
+DEVENV_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd)"
 IMAGE_NAME="devenv-sandbox"
 IMAGE_TAG="latest"
 HASH_FILE="${DEVENV_DIR}/.last-build-hash"
