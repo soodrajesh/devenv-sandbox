@@ -39,8 +39,18 @@ do_build() {
     echo "devenv: build complete"
 }
 
+warn_env_files() {
+    local found
+    found=$(find "${WORKSPACE_DIR}" -maxdepth 1 -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) 2>/dev/null)
+    if [[ -n "${found}" ]]; then
+        echo "devenv: WARNING — env/secret-looking file(s) in ${WORKSPACE_DIR} will be exposed read-write to a container with host Docker access:" >&2
+        echo "${found}" | sed 's/^/devenv:   /' >&2
+    fi
+}
+
 do_run() {
     echo "devenv: starting container (workspace: ${WORKSPACE_DIR})"
+    warn_env_files
 
     local extra_mounts=()
     if [[ ! -e "${WORKSPACE_DIR}/.claude" ]]; then
@@ -56,6 +66,12 @@ do_run() {
         -v "${WORKSPACE_DIR}:/workspace" \
         "${extra_mounts[@]}" \
         "${IMAGE_NAME}:${IMAGE_TAG}"
+}
+
+do_clean() {
+    echo "devenv: pruning dangling image layers ..."
+    docker image prune -f
+    echo "devenv: clean complete"
 }
 
 cmd="${1:-up}"
@@ -76,8 +92,17 @@ case "${cmd}" in
         fi
         do_run
         ;;
+    clean)
+        do_clean
+        ;;
     *)
-        echo "usage: devenv [up|build|shell]" >&2
+        echo "usage: devenv [up|build|shell|clean]" >&2
+        echo "  up     build if stale, then start a shell (default)" >&2
+        echo "  build  force a rebuild" >&2
+        echo "  shell  alias for up" >&2
+        echo "  clean  prune dangling image layers left behind by rebuilds" >&2
+        echo "" >&2
+        echo "env: DEVENV_WORKSPACE=<dir>  mount <dir> at /workspace instead of the current directory" >&2
         exit 1
         ;;
 esac

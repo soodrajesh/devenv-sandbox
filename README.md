@@ -6,7 +6,7 @@ A disposable, pre-provisioned dev container for testing infra tooling (Kubernete
 
 | Tool | Version | Notes |
 |---|---|---|
-| Debian | bookworm-slim | base image |
+| Debian | bookworm-slim | base image, pinned to a digest (see Dockerfile) |
 | Python | 3.11 | + pip, venv |
 | Node.js | 22.x | via NodeSource (Debian's apt package is too old for Claude Code) |
 | AWS CLI | v2 (latest) | official installer |
@@ -17,7 +17,7 @@ A disposable, pre-provisioned dev container for testing infra tooling (Kubernete
 | Claude Code | latest | npm global install |
 | git, curl, jq, vim, unzip | latest (apt) | |
 
-Version pins live at the top of the [Dockerfile](Dockerfile) as build args — bump them there when you want an upgrade.
+Version pins live at the top of the [Dockerfile](Dockerfile) as build args. The base image is pinned by digest, and kubectl/Helm/Terraform downloads are checksum-verified at build time — when bumping a version, update both the version arg and its matching `*_SHA256` arg (the Dockerfile comments show where to pull each checksum from).
 
 ## Requirements
 
@@ -67,9 +67,18 @@ Subcommands:
 devenv up      # build if stale, then start (default)
 devenv build   # force a rebuild without starting a shell
 devenv shell   # alias for up
+devenv clean   # prune dangling image layers left behind by rebuilds
+```
+
+Environment variables:
+
+```bash
+DEVENV_WORKSPACE=/path/to/project devenv up   # mount a specific dir instead of the current one
 ```
 
 Exit the shell (`exit` or Ctrl-D) and the container is gone — nothing persists except what you did inside `/workspace` (because that's a bind mount to your real files) or pushed/pulled through the mounted Docker socket.
+
+If a directory you mount contains a top-level `.env`, `.env.*`, or `*.env` file, `devenv up` prints a warning before starting — those files get exposed read-write to a container that also has host Docker access. It's a warning, not a block; move or exclude the file yourself if you don't want it in there.
 
 ## Design decisions (read before you rely on this)
 
