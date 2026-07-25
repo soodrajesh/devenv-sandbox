@@ -47,6 +47,19 @@ This mounts your **current working directory** into the container at `/workspace
 - rebuilds the image automatically if the Dockerfile has changed since the last build (otherwise reuses the cached image — near-instant start)
 - mounts your host's Docker socket in, so `docker`, and anything that talks to Docker (`kind`, `docker compose`, etc.) works against your **host's** Docker, not a nested daemon
 - mounts `~/.claude` in, so `claude` inside the container is already logged in with your host session/config
+- if the project you mounted has no `.claude/` or `CLAUDE.md` of its own, injects sandbox defaults (see below) so `claude` inside the container doesn't nag for every routine command but still stops for anything that mutates real infra
+
+### Claude Code defaults inside the sandbox
+
+[`claude-defaults/.claude/settings.json`](claude-defaults/.claude/settings.json) and [`claude-defaults/CLAUDE.md`](claude-defaults/CLAUDE.md) are mounted into `/workspace` on every `devenv up`, **unless the mounted project already has its own** (existing project config always wins — these are only a fallback for bare projects).
+
+What they do:
+
+- **Auto-approved**: file edits, `git`, read-only `kubectl`/`helm`/`terraform`/`aws` commands (`get`, `describe`, `plan`, `template`, `lint`, `diff`, `--dry-run`, etc.), package managers, test runners
+- **Still requires approval**: anything that mutates real state — `terraform apply/destroy`, `kubectl apply/delete`, `helm install/upgrade/uninstall`, `docker *`, `aws * create/delete/terminate`, `sudo`, `rm -rf`, and piping a remote script straight into `bash`/`sh`
+- **CLAUDE.md** tells Claude to default to security/best-practice judgment (no hardcoded secrets, least-privilege configs, dry-run before mutating commands, match existing project conventions) rather than staying silent on it
+
+This is a curated allowlist, not full bypass mode (`--dangerously-skip-permissions`) — the container already has host Docker socket access via the mount above, so anything that reaches through that socket stays gated behind a real approval prompt. Edit [`claude-defaults/.claude/settings.json`](claude-defaults/.claude/settings.json) directly if you want to loosen or tighten the list.
 
 Subcommands:
 

@@ -41,10 +41,20 @@ do_build() {
 
 do_run() {
     echo "devenv: starting container (workspace: ${WORKSPACE_DIR})"
+
+    local extra_mounts=()
+    if [[ ! -e "${WORKSPACE_DIR}/.claude" ]]; then
+        extra_mounts+=(-v "${DEVENV_DIR}/claude-defaults/.claude:/workspace/.claude:ro")
+    fi
+    if [[ ! -f "${WORKSPACE_DIR}/CLAUDE.md" ]]; then
+        extra_mounts+=(-v "${DEVENV_DIR}/claude-defaults/CLAUDE.md:/workspace/CLAUDE.md:ro")
+    fi
+
     docker run -it --rm \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -v "${HOME}/.claude:/root/.claude" \
         -v "${WORKSPACE_DIR}:/workspace" \
+        "${extra_mounts[@]}" \
         "${IMAGE_NAME}:${IMAGE_TAG}"
 }
 
