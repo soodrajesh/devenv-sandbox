@@ -76,6 +76,10 @@ RUN ARCH=$(uname -m) \
 # Claude Code CLI
 RUN npm install -g @anthropic-ai/claude-code
 
+# Pre-create so individual files (credentials, settings) can be bind-mounted in
+# without Docker turning them into directories when the parent path doesn't exist yet.
+RUN mkdir -p /root/.claude
+
 WORKDIR /workspace
 
 CMD ["/bin/bash"]

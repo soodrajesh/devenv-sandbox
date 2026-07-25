@@ -46,7 +46,7 @@ This mounts your **current working directory** into the container at `/workspace
 
 - rebuilds the image automatically if the Dockerfile has changed since the last build (otherwise reuses the cached image — near-instant start)
 - mounts your host's Docker socket in, so `docker`, and anything that talks to Docker (`kind`, `docker compose`, etc.) works against your **host's** Docker, not a nested daemon
-- mounts `~/.claude` in, so `claude` inside the container is already logged in with your host session/config
+- mounts just `~/.claude/.credentials.json`, `settings.json`, and `CLAUDE.md` in (not the whole `~/.claude` directory — see below), so `claude` inside the container is already logged in
 - if the project you mounted has no `.claude/` or `CLAUDE.md` of its own, injects sandbox defaults (see below) so `claude` inside the container doesn't nag for every routine command but still stops for anything that mutates real infra
 
 ### Claude Code defaults inside the sandbox
@@ -87,6 +87,10 @@ If a directory you mount contains a top-level `.env`, `.env.*`, or `*.env` file,
 **Disposable by design.** Every `devenv up` starts a fresh container (`--rm`). Anything you `apt install` or `pip install` ad hoc inside the shell is gone when you exit. If you need something persistently, add it to the [Dockerfile](Dockerfile) and rebuild — that's the intended workflow, so the container never drifts from what's documented here.
 
 **Be careful what directory you run this from.** `devenv up` mounts whatever directory you're in as `/workspace`, read-write, into a container that also has host Docker access. Don't run it from a directory containing files you wouldn't want exposed to that combination (e.g. a directory with unencrypted credentials/`.env` files) unless that's intentional.
+
+**Only three files from `~/.claude` are mounted in, not the whole directory.** `~/.claude` on the host also holds `mcp.json` (MCP server config — commonly contains plaintext API tokens for connectors like Vercel/GitHub), full conversation history under `projects/`, and session state. None of that is needed to authenticate `claude` inside the container, so `devenv` only mounts `.credentials.json`, `settings.json`, and `CLAUDE.md` individually rather than the whole directory. If you want MCP servers usable inside the sandbox, that's a deliberate call to make (and a reason to rotate/scope any tokens in `mcp.json` first) — it isn't wired up by default.
+
+**Auto-injected `.claude/` defaults clean up after themselves.** If the project you mount has no `.claude/` or `CLAUDE.md` of its own, `devenv` mounts the sandbox defaults in for the session and then removes the (empty) stub directory/file it created once the container exits — so bare projects don't accumulate leftover `.claude/` folders over repeated runs. If you actually write something into `.claude/` or `CLAUDE.md` during the session, cleanup skips it and leaves your changes in place.
 
 ## Uninstall
 

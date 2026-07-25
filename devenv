@@ -52,20 +52,54 @@ do_run() {
     echo "devenv: starting container (workspace: ${WORKSPACE_DIR})"
     warn_env_files
 
+    # Bind-mounting onto a path that doesn't exist yet creates that path on the
+    # HOST side (Docker Desktop creates it owned by the invoking user). It survives
+    # after the container exits since --rm only removes the container, not host
+    # mount-point paths Docker created for it. We track what we created here and
+    # remove it after the container exits (only if still empty — see cleanup below).
     local extra_mounts=()
+    local created_claude_dir=0
+    local created_claude_md=0
+
     if [[ ! -e "${WORKSPACE_DIR}/.claude" ]]; then
         extra_mounts+=(-v "${DEVENV_DIR}/claude-defaults/.claude:/workspace/.claude:ro")
+        created_claude_dir=1
     fi
     if [[ ! -f "${WORKSPACE_DIR}/CLAUDE.md" ]]; then
         extra_mounts+=(-v "${DEVENV_DIR}/claude-defaults/CLAUDE.md:/workspace/CLAUDE.md:ro")
+        created_claude_md=1
     fi
+
+    # Mount only what's needed to authenticate `claude` inside the container —
+    # NOT the whole ~/.claude dir, which also holds mcp.json (may contain plaintext
+    # API tokens for MCP servers), conversation history, session state, etc.
+    # .credentials.json is mounted read-write since Claude Code may refresh the OAuth token.
+    local claude_auth_mounts=()
+    for f in .credentials.json settings.json CLAUDE.md; do
+        if [[ -f "${HOME}/.claude/${f}" ]]; then
+            claude_auth_mounts+=(-v "${HOME}/.claude/${f}:/root/.claude/${f}")
+        fi
+    done
 
     docker run -it --rm \
         -v /var/run/docker.sock:/var/run/docker.sock \
-        -v "${HOME}/.claude:/root/.claude" \
         -v "${WORKSPACE_DIR}:/workspace" \
+        "${claude_auth_mounts[@]}" \
         "${extra_mounts[@]}" \
         "${IMAGE_NAME}:${IMAGE_TAG}"
+
+    # Clean up stub mount points we created above, but only if still empty —
+    # never remove something you actually wrote to during the session.
+    if [[ "${created_claude_dir}" == "1" ]] && [[ -d "${WORKSPACE_DIR}/.claude" ]]; then
+        if [[ -z "$(ls -A "${WORKSPACE_DIR}/.claude" 2>/dev/null)" ]]; then
+            rmdir "${WORKSPACE_DIR}/.claude" 2>/dev/null || true
+        fi
+    fi
+    if [[ "${created_claude_md}" == "1" ]] && [[ -f "${WORKSPACE_DIR}/CLAUDE.md" ]]; then
+        if [[ ! -s "${WORKSPACE_DIR}/CLAUDE.md" ]]; then
+            rm -f "${WORKSPACE_DIR}/CLAUDE.md" 2>/dev/null || true
+        fi
+    fi
 }
 
 do_clean() {
