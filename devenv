@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEVENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE_NAME="devenv-sandbox"
+IMAGE_TAG="latest"
+HASH_FILE="${DEVENV_DIR}/.last-build-hash"
+DOCKERFILE="${DEVENV_DIR}/Dockerfile"
+WORKSPACE_DIR="${DEVENV_WORKSPACE:-$(pwd)}"
+
+current_hash() {
+    shasum -a 256 "${DOCKERFILE}" | awk '{print $1}'
+}
+
+image_exists() {
+    docker image inspect "${IMAGE_NAME}:${IMAGE_TAG}" >/dev/null 2>&1
+}
+
+needs_build() {
+    if ! image_exists; then
+        return 0
+    fi
+    if [[ ! -f "${HASH_FILE}" ]]; then
+        return 0
+    fi
+    [[ "$(cat "${HASH_FILE}")" != "$(current_hash)" ]]
+}
+
+do_build() {
+    echo "devenv: building ${IMAGE_NAME}:${IMAGE_TAG} ..."
+    docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f "${DOCKERFILE}" "${DEVENV_DIR}"
+    current_hash > "${HASH_FILE}"
+    echo "devenv: build complete"
+}
+
+do_run() {
+    echo "devenv: starting container (workspace: ${WORKSPACE_DIR})"
+    docker run -it --rm \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        -v "${HOME}/.claude:/root/.claude" \
+        -v "${WORKSPACE_DIR}:/workspace" \
+        "${IMAGE_NAME}:${IMAGE_TAG}"
+}
+
+cmd="${1:-up}"
+
+case "${cmd}" in
+    up)
+        if needs_build; then
+            do_build
+        fi
+        do_run
+        ;;
+    build)
+        do_build
+        ;;
+    shell)
+        if needs_build; then
+            do_build
+        fi
+        do_run
+        ;;
+    *)
+        echo "usage: devenv [up|build|shell]" >&2
+        exit 1
+        ;;
+esac
