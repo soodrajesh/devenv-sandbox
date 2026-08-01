@@ -81,6 +81,24 @@ Exit the shell (`exit` or Ctrl-D) and the container is gone — nothing persists
 
 If a directory you mount contains a `.env`, `.env.*`, or `*.env` file up to 3 levels deep (skipping `node_modules/` and `.git/`), `devenv up` prints a warning before starting — those files get exposed read-write to a container that also has host Docker access. It's a warning, not a block; move or exclude the file yourself if you don't want it in there.
 
+## Editor integration (VS Code Dev Containers)
+
+`devenv up` gives you a shell; it doesn't remote the editor itself into the container. If you want VS Code (or Codespaces / JetBrains Gateway) running *inside* the same toolchain — so IntelliSense, the integrated terminal, and the debugger all see the pinned kubectl/helm/terraform/aws-cli versions — copy the template into your project:
+
+```bash
+cp -r /path/to/devenv-sandbox/claude-defaults/.devcontainer /path/to/your-project/.devcontainer
+```
+
+Then run `devenv build` at least once (so the `devenv-sandbox:latest` image the template points at actually exists), open your project in VS Code, and run **Dev Containers: Reopen in Container**.
+
+This is a template you copy in, not something `devenv up` auto-injects — unlike `claude-defaults/.claude/` and `CLAUDE.md`, which are mounted automatically for bare projects. It's not auto-injected because opening a devcontainer is an explicit, one-time editor action per project, not something that should happen implicitly on every `devenv up`.
+
+Notes on what it does:
+
+- Points at the same `devenv-sandbox:latest` image `devenv` itself builds, so the toolchain is identical either way.
+- Mounts the host Docker socket, same tradeoff as `devenv` (see Design decisions below).
+- Mounts the same three `~/.claude` auth files `devenv` mounts, and runs the same `jq`-based `settings.json` sanitization step (via `initializeCommand`) before mounting it in — so `hooks` and `skipDangerousModePermissionPrompt` don't leak into the editor's container either. Requires `jq` on the host.
+
 ## Design decisions (read before you rely on this)
 
 **This is not a security sandbox.** The container mounts `/var/run/docker.sock`, which gives anything running inside it root-equivalent control over your host's Docker — it can start, stop, or inspect any container on your machine, mount arbitrary host paths into new containers, etc. Containers you start "inside" this sandbox (e.g. via `kind` or `docker run`) are actually siblings running on your host, not nested inside it. Treat this as a **convenience environment for tooling you trust**, not isolation for untrusted code.

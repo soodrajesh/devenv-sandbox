@@ -1,0 +1,44 @@
+{
+  "name": "devenv-sandbox",
+  // Uses the image devenv-sandbox already builds (run `devenv build` at least
+  // once from the devenv-sandbox repo first, or `devenv up` in this project).
+  // This keeps the toolchain (kubectl/helm/terraform/aws-cli/node) identical
+  // whether you enter via `devenv up` or VS Code's Dev Containers extension.
+  "image": "devenv-sandbox:latest",
+  "workspaceFolder": "/workspace",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+
+  // Runs on the HOST before the container starts. Mirrors devenv's own
+  // sanitize_settings step: strips host-only `hooks` (a binary that likely
+  // doesn't exist in this image) and skipDangerousModePermissionPrompt from a
+  // COPY of ~/.claude/settings.json before it's mounted in, so the sandbox's
+  // permission model can't be silently widened or broken by host-specific config.
+  // Requires jq on the host. The host's real settings.json is never modified.
+  "initializeCommand": "jq 'del(.hooks, .skipDangerousModePermissionPrompt)' \"${env:HOME}/.claude/settings.json\" > \"${env:HOME}/.claude/.devenv-sandbox-settings.sanitized.json\" 2>/dev/null || true",
+
+  // Only the files devenv itself mounts for Claude Code auth — see devenv-sandbox's
+  // README ("Only three files from ~/.claude are mounted in") for why not the
+  // whole ~/.claude directory. Comment out any line for a file you don't have.
+  // Matches devenv's own docker.sock mount: docker/kind/compose inside the
+  // container talk to the HOST's Docker daemon, not a nested one. Same
+  // host-Docker-control tradeoff documented in devenv-sandbox's README applies
+  // here. Remove that line if you don't need docker/kind/compose in-editor.
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    "source=${localEnv:HOME}/.claude/.credentials.json,target=/root/.claude/.credentials.json,type=bind",
+    "source=${localEnv:HOME}/.claude/.devenv-sandbox-settings.sanitized.json,target=/root/.claude/settings.json,type=bind,readonly",
+    "source=${localEnv:HOME}/.claude/CLAUDE.md,target=/root/.claude/CLAUDE.md,type=bind,readonly"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "hashicorp.terraform",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+
+  "remoteUser": "root"
+}
