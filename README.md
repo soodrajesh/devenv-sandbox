@@ -23,6 +23,7 @@ Version pins live at the top of the [Dockerfile](Dockerfile) as build args. The 
 
 - Docker Desktop (or another Docker daemon) installed and running
 - macOS/Linux with bash
+- `jq` on the host (used to sanitize `~/.claude/settings.json` before mounting)
 
 ## Install
 
@@ -78,7 +79,7 @@ DEVENV_WORKSPACE=/path/to/project devenv up   # mount a specific dir instead of 
 
 Exit the shell (`exit` or Ctrl-D) and the container is gone — nothing persists except what you did inside `/workspace` (because that's a bind mount to your real files) or pushed/pulled through the mounted Docker socket.
 
-If a directory you mount contains a top-level `.env`, `.env.*`, or `*.env` file, `devenv up` prints a warning before starting — those files get exposed read-write to a container that also has host Docker access. It's a warning, not a block; move or exclude the file yourself if you don't want it in there.
+If a directory you mount contains a `.env`, `.env.*`, or `*.env` file up to 3 levels deep (skipping `node_modules/` and `.git/`), `devenv up` prints a warning before starting — those files get exposed read-write to a container that also has host Docker access. It's a warning, not a block; move or exclude the file yourself if you don't want it in there.
 
 ## Design decisions (read before you rely on this)
 
@@ -89,6 +90,8 @@ If a directory you mount contains a top-level `.env`, `.env.*`, or `*.env` file,
 **Be careful what directory you run this from.** `devenv up` mounts whatever directory you're in as `/workspace`, read-write, into a container that also has host Docker access. Don't run it from a directory containing files you wouldn't want exposed to that combination (e.g. a directory with unencrypted credentials/`.env` files) unless that's intentional.
 
 **Only three files from `~/.claude` are mounted in, not the whole directory.** `~/.claude` on the host also holds `mcp.json` (local MCP server config — commonly contains plaintext API tokens for connectors like GitHub/Vercel), full conversation history under `projects/`, and session state. None of that is needed to authenticate `claude` inside the container, so `devenv` only mounts `.credentials.json`, `settings.json`, and `CLAUDE.md` individually rather than the whole directory. This blocks any **file-based** MCP server (anything defined in `mcp.json`, which carries its own separate raw token per server).
+
+**`settings.json` is sanitized before it's mounted, not passed through verbatim.** The host's `settings.json` can carry host-specific `hooks` (e.g. a `PreToolUse` command gating every Bash call) or `skipDangerousModePermissionPrompt`. A hook binary that only exists on the host would silently fail or no-op inside the container, and either key could otherwise change what the sandbox's permission model actually allows without any visible signal. `devenv` strips `hooks` and `skipDangerousModePermissionPrompt` (via `jq`) from a copy of the file before mounting that copy in; the host's real `settings.json` is never modified.
 
 **What this does *not* block: `claude.ai` account-level connectors** (e.g. Gmail, Google Drive, Vercel when connected through claude.ai rather than a local `mcp.json` entry). Those ride on the OAuth session inside `.credentials.json` itself — there's no CLI flag or config file that suppresses them independently of that session (tested: `--strict-mcp-config` with an empty MCP config has no effect on them). The only way to fully exclude them would be to stop mounting `.credentials.json` and re-authenticate `claude` manually every session — traded off here in favor of not having to log in every time, since this is a single-user local tool. If that tradeoff ever stops being acceptable, dropping the `.credentials.json` mount in [`devenv`](devenv) is the fix.
 

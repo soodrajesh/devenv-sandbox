@@ -8,6 +8,12 @@ while [[ -L "${SCRIPT_SOURCE}" ]]; do
     [[ "${SCRIPT_SOURCE}" != /* ]] && SCRIPT_SOURCE="${SCRIPT_DIR}/${SCRIPT_SOURCE}"
 done
 DEVENV_DIR="$(cd "$(dirname "${SCRIPT_SOURCE}")" && pwd)"
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "error: jq is required on the host (used to sanitize ~/.claude/settings.json before mounting). Install it and retry." >&2
+    exit 1
+fi
+
 IMAGE_NAME="devenv-sandbox"
 IMAGE_TAG="latest"
 HASH_FILE="${DEVENV_DIR}/.last-build-hash"
@@ -41,11 +47,22 @@ do_build() {
 
 warn_env_files() {
     local found
-    found=$(find "${WORKSPACE_DIR}" -maxdepth 1 -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) 2>/dev/null)
+    found=$(find "${WORKSPACE_DIR}" -maxdepth 3 -type f \( -name '.env' -o -name '.env.*' -o -name '*.env' \) \
+        -not -path '*/node_modules/*' -not -path '*/.git/*' 2>/dev/null)
     if [[ -n "${found}" ]]; then
-        echo "devenv: WARNING — env/secret-looking file(s) in ${WORKSPACE_DIR} will be exposed read-write to a container with host Docker access:" >&2
+        echo "devenv: WARNING — env/secret-looking file(s) under ${WORKSPACE_DIR} will be exposed read-write to a container with host Docker access:" >&2
         echo "${found}" | sed 's/^/devenv:   /' >&2
     fi
+}
+
+# Host ~/.claude/settings.json may carry host-specific hooks (e.g. a PreToolUse
+# Bash gate) or skipDangerousModePermissionPrompt. Neither survives meaningfully
+# inside the container (the hook's binary is typically host-only) and mounting
+# them in verbatim would silently change or weaken the sandbox's own permission
+# behavior. Strip those keys from the copy we mount, leave the host file untouched.
+sanitize_settings() {
+    local src="$1" dest="$2"
+    jq 'del(.hooks, .skipDangerousModePermissionPrompt)' "${src}" > "${dest}"
 }
 
 do_run() {
@@ -75,8 +92,14 @@ do_run() {
     # API tokens for MCP servers), conversation history, session state, etc.
     # .credentials.json is mounted read-write since Claude Code may refresh the OAuth token.
     local claude_auth_mounts=()
+    local sanitized_settings=""
     for f in .credentials.json settings.json CLAUDE.md; do
-        if [[ -f "${HOME}/.claude/${f}" ]]; then
+        [[ -f "${HOME}/.claude/${f}" ]] || continue
+        if [[ "${f}" == "settings.json" ]]; then
+            sanitized_settings="$(mktemp)"
+            sanitize_settings "${HOME}/.claude/${f}" "${sanitized_settings}"
+            claude_auth_mounts+=(-v "${sanitized_settings}:/root/.claude/${f}")
+        else
             claude_auth_mounts+=(-v "${HOME}/.claude/${f}:/root/.claude/${f}")
         fi
     done
@@ -87,6 +110,8 @@ do_run() {
         "${claude_auth_mounts[@]}" \
         "${extra_mounts[@]}" \
         "${IMAGE_NAME}:${IMAGE_TAG}"
+
+    [[ -n "${sanitized_settings}" ]] && rm -f "${sanitized_settings}"
 
     # Clean up stub mount points we created above, but only if still empty —
     # never remove something you actually wrote to during the session.
