@@ -2,6 +2,48 @@
 
 A disposable, pre-provisioned dev container for testing infra tooling (Kubernetes manifests, Terraform, AWS CLI, Docker) without touching your host machine. One command brings it up with everything pre-installed, your current directory mounted, and Claude Code already authenticated.
 
+## Quick start: using this for a new project
+
+One-time setup (skip if already done):
+
+```bash
+git clone https://github.com/soodrajesh/devenv-sandbox.git
+cd devenv-sandbox
+./install.sh
+```
+
+Then, for any repo you're about to work on, pick one of the two paths below.
+
+### Path A — shell only
+
+```bash
+cd /path/to/your-project
+devenv up
+```
+
+Drops you into a bash shell with the full toolchain, your project mounted at `/workspace`, and Claude Code already logged in. Exit the shell (`exit` / Ctrl-D) and the container is gone. Use this when you just need to run commands or let Claude Code work in a terminal — nothing else to set up.
+
+### Path B — VS Code editor integration
+
+Do this once per project:
+
+```bash
+cd /path/to/your-project
+cp -r /path/to/devenv-sandbox/claude-defaults/.devcontainer .devcontainer
+devenv build   # only if the image isn't built yet, or the Dockerfile changed
+code .
+```
+
+Then in VS Code: **Cmd+Shift+P → "Dev Containers: Reopen in Container"**.
+
+This remotes the whole editor — IntelliSense, debugger, integrated terminal — into the same `devenv-sandbox:latest` image, instead of just giving you a shell. VS Code remembers the `.devcontainer/` config, so every time you reopen that project you can jump straight back in.
+
+Use this when you're actively editing code and want live validation/debugging against the pinned toolchain (e.g. writing Terraform/Kubernetes manifests).
+
+**Note:** `devenv up`'s auto-injected Claude Code permission defaults ([see below](#claude-code-defaults-inside-the-sandbox)) only apply on the Path A shell — Path B doesn't inject them. If you want the same curated allowlist inside the VS Code-remoted container, also copy `claude-defaults/.claude` and `claude-defaults/CLAUDE.md` into the project (same copy-once pattern), unless the project already has its own.
+
+The two paths aren't mutually exclusive — same image either way, just different entry points.
+
 ## What's installed
 
 | Tool | Version | Notes |
